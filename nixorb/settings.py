@@ -112,6 +112,11 @@ class Settings(BaseModel):
     # NOTE: Breeze-TTS-2 needs ~7.7 GB VRAM minimum (12 GB recommended per its
     # own card) — confirm this actually fits your card before relying on it.
     tts_hf_repo: str = "BreezeBlue/Breeze-TTS-2"
+    # Piper ships no voice models. Any name from
+    # https://huggingface.co/rhasspy/piper-voices is fetched on first use
+    # into ~/.local/share/piper/voices; turn this off to keep NixOrb
+    # entirely offline and use only voices already on disk.
+    tts_download_voices: bool = True
     # SpeechT5 needs a speaker x-vector: a .npy path, a cmu-arctic-xvectors
     # index, or blank for the default voice. Ignored by other models.
     tts_hf_speaker: str = ""

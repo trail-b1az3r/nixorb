@@ -44,9 +44,18 @@ VOICE_DIRS_FLAT = (
     Path("/usr/share/piper/voices"),
 )
 VOICE_DIRS_NESTED = (
+    PIPER_VOICES_DIR,
     Path("/usr/share/piper-voices"),
     Path.home() / ".local" / "share" / "piper-voices",
 )
+
+
+def _hf_token(settings: Settings | None) -> str | None:
+    """A Hugging Face token, if one is configured — voices are public, but
+    a token still matters behind an authenticating proxy."""
+    from nixorb import hf
+
+    return hf.token(settings)
 
 
 def find_piper_binary() -> str | None:
@@ -63,13 +72,22 @@ class PiperTTS:
 
     def __init__(self, settings: Settings | None = None) -> None:
         if settings:
-            self._voice = settings.tts_voice
+            self._voice = self._piper_voice_from(settings.tts_voice)
             self._speed = settings.tts_speed
             self._volume = settings.tts_volume
         else:
             self._voice = DEFAULT_VOICE
             self._speed = 1.0
             self._volume = 1.0
+
+        self._hf_token = _hf_token(settings)
+        self._download_voices = bool(
+            getattr(settings, "tts_download_voices", True)
+        ) if settings else True
+        # Resolved once per process: a 60 MB download must not be attempted
+        # per sentence, and a failure must not be re-logged per sentence.
+        self._voice_model: Path | None = None
+        self._voice_failed = False
 
         self._piper = find_piper_binary()
         self._piper_available = self._piper is not None
@@ -78,6 +96,33 @@ class PiperTTS:
         self._stopped = False
 
     name = "piper"
+
+    @staticmethod
+    def _piper_voice_from(configured: str) -> str:
+        """The Piper voice to use, given whatever `tts_voice` holds.
+
+        `tts_voice` is shared with the Hugging Face backend, whose default
+        is a sentence describing a voice ("A calm, clear-voiced woman…")
+        because voice-design models take one. Piper cannot use that, and
+        handing it over produced nothing but a silent drop to espeak on a
+        stock config. A value Piper cannot name is not an error — it just
+        means the setting was written for another backend.
+        """
+        from nixorb.tts import piper_voices
+
+        text = (configured or "").strip()
+        if not text:
+            return DEFAULT_VOICE
+        if piper_voices.looks_like_path(text) or piper_voices.parse_voice_name(text):
+            return text
+
+        log.info(
+            "TTS: tts_voice is a description, not a Piper voice name — "
+            "using '%s'. Set tts_voice to a name like 'en_GB-alan-medium' "
+            "to pick another; it is downloaded on first use.",
+            DEFAULT_VOICE,
+        )
+        return DEFAULT_VOICE
 
     def stop(self) -> None:
         """Cut playback off mid-sentence (barge-in)."""
@@ -111,6 +156,46 @@ class PiperTTS:
                 return match
 
         return None
+
+    def _resolve_voice_model(self) -> Path | None:
+        """The model for the configured voice, downloading it if needed.
+
+        Piper ships no voices and the installer fetches exactly one, so
+        without this every other value of `tts_voice` found nothing and
+        dropped silently to espeak — which looked like Piper supporting a
+        single voice.
+        """
+        if self._voice_model is not None:
+            return self._voice_model
+        if self._voice_failed:
+            # Already tried and explained why; do not re-download per
+            # sentence, and do not repeat the message on every one.
+            return None
+
+        from nixorb.tts import piper_voices
+
+        try:
+            model = piper_voices.ensure(
+                self._voice,
+                search=lambda _voice: self._find_voice_model(),
+                dest=PIPER_VOICES_DIR,
+                token=self._hf_token,
+                allow_download=self._download_voices,
+            )
+        except piper_voices.VoiceUnavailable as exc:
+            self._voice_failed = True
+            log.warning("TTS: %s — using espeak-ng instead", exc)
+            return None
+        except Exception as exc:
+            self._voice_failed = True
+            log.warning(
+                "TTS: could not prepare Piper voice '%s' (%s) — using "
+                "espeak-ng instead", self._voice, exc,
+            )
+            return None
+
+        self._voice_model = model
+        return model
 
     @property
     def available(self) -> bool:
@@ -152,10 +237,9 @@ class PiperTTS:
 
     def _speak_piper_sync(self, text: str) -> None:
         """Synchronous Piper TTS (runs in executor)."""
-        model_path = self._find_voice_model()
+        model_path = self._resolve_voice_model()
 
         if model_path is None:
-            log.warning("TTS: Piper voice model not found, falling back to espeak")
             self._speak_espeak_sync(text)
             return
 
