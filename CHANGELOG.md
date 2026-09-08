@@ -1,3 +1,44 @@
+## [2.0.13] — 2026-09-03
+
+Piper works with any voice now, and fetches it.
+
+### Fixed
+
+- **Piper never downloaded a voice, so it only ever had one.** It searched
+  a handful of local directories and, finding nothing, dropped silently to
+  espeak-ng. `install.sh` fetches exactly one model
+  (`en_US-lessac-medium`), so every other value of `tts_voice` looked
+  unsupported — the engine appeared to work with a single voice.
+
+  Any of the ~180 voices in `rhasspy/piper-voices` can now be named and is
+  fetched on first use into `~/.local/share/piper/voices`. So can a path to
+  a `.onnx` you have already. Upstream's layout is deterministic —
+  `<lang>/<locale>/<speaker>/<quality>/<locale>-<speaker>-<quality>.onnx` —
+  so no index is needed to find one.
+
+  The path builder is checked against the real repo listing, including the
+  shapes that break naive parsing: a non-ASCII speaker (`pt_PT-tugão-medium`),
+  one starting with a digit (`vi_VN-25hours_single-low`), multi-word
+  speakers (`en_GB-southern_english_female-low`), and the `x_low` quality
+  whose own underscore defeats splitting from the right.
+
+- **A stock config could not speak through Piper at all.** `tts_voice`
+  defaults to a sentence describing a voice, because the Hugging Face
+  voice-design backend takes one. Piper cannot use prose, so it found no
+  model and fell to espeak. It now recognises that the setting was written
+  for another backend and uses `en_US-lessac-medium`, saying so once.
+
+- Downloads are validated before being kept: an error page, an LFS pointer
+  or a truncated transfer is rejected rather than cached as a voice and
+  failing inside Piper on every later run. A voice is resolved once per
+  process, not once per sentence, and a failure is logged once rather than
+  per sentence.
+
+### Added
+
+- `tts_download_voices` (default `true`) — set it to `false` to keep NixOrb
+  entirely offline and use only voices already on disk.
+
 ## [2.0.12] — 2026-09-03
 
 **PyPI's 2.0.11 is not 2.0.11.** It contains 2.0.10's code. Anyone who

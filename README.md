@@ -48,6 +48,30 @@ tts_backend  = "huggingface"
 tts_hf_repo  = "facebook/mms-tts-eng"      # SpeechT5, Bark, VITS, Parler, …
 ```
 
+### Any Piper voice
+
+Piper ships no voices. Name any of the ~180 in
+[`rhasspy/piper-voices`](https://huggingface.co/rhasspy/piper-voices) and it
+is fetched on first use into `~/.local/share/piper/voices`:
+
+```toml
+tts_backend = "piper"
+tts_voice   = "en_GB-northern_english_male-medium"
+# or "de_DE-thorsten-high", "fr_FR-siwis-medium", "ja_JA-hi_fi_captain-medium", …
+# or the path of a .onnx you trained or downloaded yourself:
+# tts_voice = "/home/me/voices/my-voice.onnx"
+
+tts_download_voices = true   # false to stay offline and use only what is on disk
+```
+
+Names are `locale-speaker-quality`, and quality is one of `x_low`, `low`,
+`medium`, `high` — bigger is better and slower. Try one without restarting
+the orb:
+
+```bash
+nixorb tts "Testing this voice."
+```
+
 Gated repos need a token: set `hf_token`, or export `HF_TOKEN`.
 
 ### NVIDIA Nemotron 3.5 ASR (streaming)
@@ -258,6 +282,8 @@ and whether the configured model is installed.
 | `Failed to load model from file: …gguf` | The error now continues with what the file's own header says. "The file itself is fine … architecture 'x'" means the download is good and your llama.cpp is too old: `pip install -U --force-reinstall --no-cache-dir llama-cpp-python`. "Not a usable GGUF" means re-download. |
 | `nemotron failed: expected string or bytes-like object, got 'list'` | Fixed in 2.0.11 — `generate()` returns a batched sequence and the decoder was handed the batch. Upgrade. |
 | `Numba needs NumPy 2.4 or less` | numba (pulled in by the Nemotron stack) trails NumPy by a release. `pip install "numpy<2.5"`. NixOrb falls back to faster-whisper meanwhile. |
+| Piper only ever uses one voice | Fixed in 2.0.13 — before that it searched disk only, so any voice the installer had not fetched fell back to espeak. Set `tts_voice` to any name from `rhasspy/piper-voices`. |
+| It speaks with espeak although `tts_backend = "piper"` | The log line starting `TTS:` says why: no `piper-tts` binary, or the voice could not be fetched. A `tts_voice` written as prose (the stock default, meant for the HF backend) now falls back to `en_US-lessac-medium` rather than to espeak. |
 | Custom wake word ignored | `wake_word_model` must be an openwakeword `.onnx`/`.tflite` path, or one of its bundled names. A Hugging Face repo of a transformers audio classifier is a different kind of model and openwakeword cannot load it — train one with openwakeword's tools instead. |
 | Out of VRAM with an HF LLM | `llm_hf_load_in_4bit = true` (`pip install 'nixorb[quant]'`), or `hf_device = "cpu"`. |
 | Actions do nothing when run as root | NixOrb disables command execution as root — run it as your normal user. |
