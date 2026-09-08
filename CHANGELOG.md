@@ -1,3 +1,31 @@
+## [2.0.14] — 2026-09-08
+
+The account was renamed `minerofthesoal` → `trail-b1az3r`. Git URLs kept
+working through GitHub's redirect, so nothing looked broken until a release
+failed.
+
+### Fixed
+
+- **PyPI publishing broke on the rename.** Trusted Publishing matches the
+  OIDC claims GitHub mints against a publisher registered on the project,
+  and the owner claim is the account's *current* login — the publisher
+  still said `minerofthesoal`, so the exchange failed with
+  `invalid-publisher: valid token, but no corresponding publisher`. The
+  workflow now documents exactly which four fields have to agree, and why
+  a rename breaks them. **The fix itself is on PyPI, not in this repo:**
+  the publisher has to be re-registered for the new owner.
+
+- **Every GitHub URL in the repository still pointed at the old account.**
+  README, CONTRIBUTING, docs/INSTALLATION, pyproject's project URLs, the
+  AppImage update channel, and `nixorb-pkg/PKGBUILD`.
+
+  The PKGBUILD one was not cosmetic. Its `source=` fetched
+  `github.com/minerofthesoal/nixorb/archive/refs/tags/v$pkgver.tar.gz`,
+  which works today only because GitHub redirects the old name — and a
+  freed username can be registered by anyone. Whoever claimed it could
+  then serve the tarball that this PKGBUILD builds and installs. All URLs
+  now name the current owner.
+
 ## [2.0.13] — 2026-09-03
 
 Piper works with any voice now, and fetches it.

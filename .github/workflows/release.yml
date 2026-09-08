@@ -170,6 +170,28 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' &&
        github.event.inputs.create_release == 'true')
+    # Publishing uses PyPI Trusted Publishing (OIDC), so there is no API
+    # token anywhere. PyPI matches the claims GitHub mints against a
+    # publisher registered on the project, and every field has to agree:
+    #
+    #   Owner:        trail-b1az3r
+    #   Repository:   nixorb
+    #   Workflow:     release.yml
+    #   Environment:  pypi          <- the `environment.name` below
+    #
+    # Registered at https://pypi.org/manage/project/nixorb/settings/publishing/
+    #
+    # The owner claim is the account's CURRENT login, not the one the repo
+    # was created under. This account was renamed minerofthesoal ->
+    # trail-b1az3r; git URLs kept working through GitHub's redirect, so
+    # nothing looked broken until a release failed with
+    #
+    #   invalid-publisher: valid token, but no corresponding publisher
+    #
+    # If that appears again, read the claims the action prints and make the
+    # publisher on PyPI say exactly those. Renaming the account, renaming
+    # the repo, renaming this file, or changing the environment name below
+    # all break the match and all need the publisher updated to suit.
     environment:
       name: pypi
       url: https://pypi.org/p/nixorb

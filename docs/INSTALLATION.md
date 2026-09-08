@@ -10,7 +10,7 @@
 ## Quick Install (Recommended)
 
 ```bash
-git clone https://github.com/minerofthesoal/nixorb.git
+git clone https://github.com/trail-b1az3r/nixorb.git
 cd nixorb
 bash scripts/setup_dev.sh
 ```

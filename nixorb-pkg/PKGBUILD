@@ -1,11 +1,11 @@
 # Maintainer: NixOrb Contributors
-# Repo: https://github.com/minerofthesoal/nixorb
+# Repo: https://github.com/trail-b1az3r/nixorb
 pkgname=nixorb
 pkgver=0.01.0.01
 pkgrel=1
 pkgdesc="Floating AI assistant orb for Arch Linux — KDE Plasma 6 Wayland"
 arch=('x86_64')
-url="https://github.com/minerofthesoal/nixorb"
+url="https://github.com/trail-b1az3r/nixorb"
 license=('MIT')
 install=nixorb.install
 depends=(
@@ -36,7 +36,7 @@ makedepends=(
     'qt6-tools'
     'python-pip'
 )
-source=("nixorb-${pkgver}.tar.gz::https://github.com/minerofthesoal/nixorb/archive/refs/tags/v${pkgver}.tar.gz")
+source=("nixorb-${pkgver}.tar.gz::https://github.com/trail-b1az3r/nixorb/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('SKIP')
 
 build() {

@@ -154,9 +154,9 @@ nixorb = "nixorb.cli:app"
 nixorb-gui = "nixorb.main:main"
 
 [project.urls]
-Homepage = "https://github.com/minerofthesoal/nixorb"
-Repository = "https://github.com/minerofthesoal/nixorb"
-Issues = "https://github.com/minerofthesoal/nixorb/issues"
+Homepage = "https://github.com/trail-b1az3r/nixorb"
+Repository = "https://github.com/trail-b1az3r/nixorb"
+Issues = "https://github.com/trail-b1az3r/nixorb/issues"
 
 [tool.hatch.version]
 path = "nixorb/__init__.py"
