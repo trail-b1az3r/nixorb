@@ -53,4 +53,4 @@ AppDir:
 
 AppImage:
   arch: x86_64
-  update-information: gh-releases-zsync|minerofthesoal|nixorb|latest|NixOrb-*x86_64.AppImage.zsync
+  update-information: gh-releases-zsync|trail-b1az3r|nixorb|latest|NixOrb-*x86_64.AppImage.zsync
