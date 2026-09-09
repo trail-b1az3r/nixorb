@@ -179,9 +179,33 @@ class ActionExecutor:
     # ── parsing ──────────────────────────────────────────────────── #
 
     def _extract_actions(self, text: str) -> list[str]:
-        """Extract <ACTION> commands from an LLM response."""
+        """Extract <ACTION> commands from the answer — not from the thinking.
+
+        A reasoning model rehearses inside `<think>`: it will write a
+        command out, consider it, and often decide against it. Running one
+        from there executes something the model explicitly rejected, so the
+        reasoning is removed before anything is extracted. Only commands
+        the model put in its actual answer are eligible.
+        """
+        from nixorb.llm.reasoning import REASONING_TAGS, strip_tags
+
+        answer = strip_tags(text, REASONING_TAGS)
+        if answer != text.strip():
+            considered = re.findall(
+                r"<ACTION>(.*?)</ACTION>", text, re.DOTALL | re.IGNORECASE
+            )
+            kept = re.findall(
+                r"<ACTION>(.*?)</ACTION>", answer, re.DOTALL | re.IGNORECASE
+            )
+            if len(considered) > len(kept):
+                log.info(
+                    "Action: ignored %d command(s) the model only weighed up "
+                    "inside its reasoning",
+                    len(considered) - len(kept),
+                )
+
         pattern = r"<ACTION>(.*?)</ACTION>"
-        commands = re.findall(pattern, text, re.DOTALL | re.IGNORECASE)
+        commands = re.findall(pattern, answer, re.DOTALL | re.IGNORECASE)
         return [cmd.strip() for cmd in commands if cmd.strip()]
 
     def _build_command(self, cmd: str) -> list[str]:

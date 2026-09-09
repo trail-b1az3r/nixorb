@@ -19,7 +19,6 @@ import asyncio
 import logging
 import shutil
 import subprocess
-from pathlib import Path
 
 import typer
 
@@ -248,7 +247,12 @@ def config(
     ),
 ) -> None:
     """Open NixOrb configuration in default editor (or --gui for a graphical dialog)."""
-    config_path = Path.home() / ".config" / "nixorb" / "config.toml"
+    # settings.config_path(), not a second hardcoded copy: with
+    # NIXORB_CONFIG set this used to open a file NixOrb never reads, so
+    # every edit made here was discarded.
+    from nixorb.settings import config_path as _resolve_config_path
+
+    config_path = _resolve_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
     if not config_path.exists():
         Settings().save()
@@ -278,7 +282,7 @@ def check() -> None:
     from nixorb import envcheck
 
     typer.echo("Python environment:")
-    for line in envcheck.report():
+    for line in envcheck.full_report():
         typer.echo(line)
 
     typer.echo("")

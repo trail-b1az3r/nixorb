@@ -1,19 +1,97 @@
 """NixOrb settings — Pydantic v2 settings with TOML persistence."""
 from __future__ import annotations
 
+import logging
 import os
+import sys
 import tomllib
+from difflib import get_close_matches
 from pathlib import Path
+from typing import Any
 
 import tomli_w
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 _CONFIG_ENV = "NIXORB_CONFIG"
+_DEFAULTS_ENV = "NIXORB_DEFAULT_CONFIG"
 _DEFAULT_CONFIG = Path.home() / ".config" / "nixorb" / "config.toml"
 
+log = logging.getLogger(__name__)
 
-def _config_path() -> Path:
+
+def config_path() -> Path:
+    """The config file NixOrb reads and writes."""
     return Path(os.environ[_CONFIG_ENV]) if _CONFIG_ENV in os.environ else _DEFAULT_CONFIG
+
+
+# Kept for callers that already used the private name.
+_config_path = config_path
+
+
+def packaged_defaults() -> Path | None:
+    """The `default.toml` shipped alongside the package, if it is installed.
+
+    This file is installed as shared data and documented as the defaults,
+    but nothing ever read it, so editing it did exactly nothing. It is now
+    a real layer underneath the user's own config.
+    """
+    override = os.environ.get(_DEFAULTS_ENV)
+    if override:
+        candidate = Path(override)
+        return candidate if candidate.is_file() else None
+
+    here = Path(__file__).resolve().parent
+    candidates = (
+        Path(sys.prefix) / "share" / "nixorb" / "config" / "default.toml",
+        Path.home() / ".local" / "share" / "nixorb" / "config" / "default.toml",
+        here.parent / "config" / "default.toml",  # a source checkout
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _read_toml(path: Path) -> dict[str, Any]:
+    try:
+        with open(path, "rb") as handle:
+            return dict(tomllib.load(handle))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        log.error("Config: %s could not be read (%s) — ignoring it", path, exc)
+        return {}
+
+
+def _drop_invalid(
+    model: type[Settings], data: dict[str, Any], source: str
+) -> dict[str, Any]:
+    """Keep every key the model accepts, naming the ones it does not.
+
+    A single mistyped value used to fail the whole load, and every other
+    setting in the file silently reverted to its default — which is what
+    "changing the config does nothing" looked like from the outside. One
+    bad key should cost one key.
+    """
+    kept = dict(data)
+    for _ in range(len(data) + 1):
+        try:
+            model(**kept)
+            return kept
+        except ValidationError as exc:
+            bad = {
+                str(error["loc"][0])
+                for error in exc.errors()
+                if error.get("loc")
+            }
+            if not bad:
+                log.error("Config: %s could not be applied: %s", source, exc)
+                return {}
+            for key in bad:
+                log.error(
+                    "Config: %s in %s is not valid (%s) — using the default "
+                    "for it; the rest of the file still applies.",
+                    key, source, kept.pop(key, None),
+                )
+    return {}
 
 
 class Settings(BaseModel):
@@ -94,7 +172,9 @@ class Settings(BaseModel):
         "You can execute bash commands, search the web, capture the screen, "
         "and remember conversations."
     )
-    llm_max_tokens: int = 512
+    # Reasoning models spend a whole <think> block before answering, and
+    # 512 tokens ran out inside it — the thinking was all you ever got.
+    llm_max_tokens: int = 4096
     llm_temperature: float = 0.7
     # Seconds to wait for the user to answer a command-confirmation dialog.
     action_confirm_timeout: float = 60.0
@@ -181,20 +261,49 @@ class Settings(BaseModel):
 
     @classmethod
     def load(cls) -> Settings:
-        """Load settings from config file, creating defaults if missing."""
-        p = _config_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        if p.exists():
-            try:
-                with open(p, "rb") as f:
-                    data = tomllib.load(f)
-                return cls(**data)
-            except Exception as exc:
-                import logging
-                logging.getLogger(__name__).error(
-                    "Config load failed, using defaults: %s", exc
-                )
-        return cls()
+        """Load settings, layering the user's config over the packaged one.
+
+        Three layers, each overriding the one before: the field defaults
+        below, `default.toml` as installed with the package, then the
+        user's `~/.config/nixorb/config.toml`. Keys the model rejects are
+        dropped individually and named, so one mistake costs one setting
+        rather than the whole file.
+        """
+        merged: dict[str, Any] = {}
+
+        packaged = packaged_defaults()
+        if packaged is not None:
+            merged.update(_drop_invalid(cls, _read_toml(packaged), str(packaged)))
+
+        user = config_path()
+        user.parent.mkdir(parents=True, exist_ok=True)
+        if user.exists():
+            data = _read_toml(user)
+            cls._warn_unknown(data, str(user))
+            merged.update(_drop_invalid(cls, data, str(user)))
+
+        try:
+            return cls(**merged)
+        except ValidationError as exc:  # pragma: no cover - _drop_invalid ran
+            log.error("Config: falling back to defaults entirely: %s", exc)
+            return cls()
+
+    @classmethod
+    def _warn_unknown(cls, data: dict[str, Any], source: str) -> list[str]:
+        """Name settings that do not exist, instead of ignoring them.
+
+        pydantic drops unknown keys without a word, so a typo like
+        `tts_backendd` looked exactly like a setting that does nothing.
+        """
+        unknown = sorted(set(data) - set(cls.model_fields))
+        for key in unknown:
+            near = get_close_matches(key, cls.model_fields, n=1, cutoff=0.7)
+            suggestion = f" — did you mean '{near[0]}'?" if near else ""
+            log.warning(
+                "Config: '%s' in %s is not a NixOrb setting and has no "
+                "effect%s", key, source, suggestion,
+            )
+        return unknown
 
     def save(self) -> None:
         """Persist current settings to config file."""
