@@ -58,8 +58,10 @@ _WEB_KW = frozenset({
 
 
 def _strip_actions(text: str) -> str:
-    """Remove <ACTION> tags from text for TTS."""
-    return re.sub(r"<ACTION>.*?</ACTION>", "", text, flags=re.DOTALL).strip()
+    """Remove <ACTION> commands and <think> reasoning from text for TTS."""
+    from nixorb.llm.reasoning import ACTION_TAGS, REASONING_TAGS, strip_tags
+
+    return strip_tags(text, ACTION_TAGS + REASONING_TAGS)
 
 
 def _wants_screen(text: str) -> bool:

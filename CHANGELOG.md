@@ -1,3 +1,52 @@
+## [2.0.15] — 2026-09-09
+
+Config that did nothing, a reply that was all thinking and no answer, and
+commands that never ran.
+
+### Fixed
+
+- **Changing the config did nothing — for four separate reasons.**
+  - `config/default.toml` is installed as package data and documented as
+    the defaults, and *no code ever read it*. It is now a real layer:
+    field defaults, then the packaged file, then the user's own config.
+  - A mistyped key was dropped by pydantic without a word, so
+    `tts_backendd` looked exactly like a setting with no effect. Unknown
+    keys are now named, with a suggestion where one is close.
+  - One badly-typed value failed validation for the entire file, so every
+    other setting in it silently reverted. Bad keys are now dropped one at
+    a time and named; the rest of the file still applies.
+  - `nixorb config` opened a hardcoded `~/.config` path rather than the
+    one that gets loaded, so with `NIXORB_CONFIG` set it edited a file
+    nothing reads.
+
+- **The orb read its own thinking aloud, with no spaces and no answer.**
+  Three faults, one experience:
+  - `_extract_tool_calls` ended in `.strip()` and ran on *every streamed
+    token*. llama.cpp emits tokens with the leading space attached, so
+    stripping each one gave `Iamthinkingaboutthis`, and a space-only token
+    became `""` and was dropped entirely.
+  - Nothing removed `<think>`. `<ACTION>` blocks were held back and
+    reasoning was not, so the model's private working was spoken.
+    `nixorb.llm.reasoning` suppresses it as it streams — including a tag
+    split across chunk boundaries — without buffering the reply, so speech
+    still starts a sentence or two in.
+  - `llm_max_tokens` was 512, less than a `<think>` block. Generation
+    stopped before the answer began. It now defaults to 4096.
+
+- **A command the model rejected while thinking could still run.**
+  Reasoning models rehearse: they write a command out, weigh it up, and
+  often decide against it. Extraction ran over the raw response, so
+  `<think>I could run <ACTION>rm -rf /</ACTION> … so no.</think>` executed
+  it anyway. Commands now come from the answer only, and one skipped this
+  way is logged.
+
+### Added
+
+- `nixorb check` reports whether commands can run at all: running as root
+  refuses execution outright, and the confirmation and sandbox settings are
+  listed. "It can't run things on my PC" had several causes that looked
+  identical from outside.
+
 ## [2.0.14] — 2026-09-08
 
 The account was renamed `minerofthesoal` → `trail-b1az3r`. Git URLs kept

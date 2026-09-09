@@ -8,7 +8,8 @@ soon as it lands, so the reply starts within a second of the model starting.
 It also handles the two things that make an assistant feel interruptible:
 
   * `stop()` — barge-in. Cuts playback off mid-sentence and drops the queue.
-  * `<ACTION>` suppression — command blocks are held back rather than read
+  * `<ACTION>` and `<think>` suppression — commands NixOrb runs, and a
+    reasoning model's private working, are held back rather than read
     aloud, without waiting for the whole response to arrive first.
 """
 from __future__ import annotations
@@ -18,6 +19,8 @@ import contextlib
 import logging
 import re
 from typing import Any
+
+from nixorb.llm.reasoning import ACTION_TAGS, REASONING_TAGS, suppressors
 
 log = logging.getLogger(__name__)
 
@@ -29,8 +32,6 @@ MIN_SENTENCE_CHARS = 12
 # ...unless the buffer grows past this with no punctuation in sight.
 MAX_BUFFER_CHARS = 240
 
-_ACTION_OPEN = "<ACTION>"
-_ACTION_CLOSE = "</ACTION>"
 
 
 def split_sentences(buffer: str) -> tuple[list[str], str]:
@@ -64,8 +65,7 @@ class Speaker:
         self._engine = engine
         self._streaming = streaming
         self._buffer = ""
-        self._pending_action = ""
-        self._in_action = False
+        self._filter = suppressors(ACTION_TAGS, REASONING_TAGS)
         self._task: asyncio.Task | None = None
         self._queue: asyncio.Queue[str | None] | None = None
         self._stopped = False
@@ -80,8 +80,7 @@ class Speaker:
         """Begin a new utterance."""
         await self.stop()
         self._buffer = ""
-        self._pending_action = ""
-        self._in_action = False
+        self._filter = suppressors(ACTION_TAGS, REASONING_TAGS)
         self._stopped = False
         if not self._streaming:
             return
@@ -93,7 +92,7 @@ class Speaker:
         if not self._streaming or self._stopped or not chunk:
             return
 
-        text = self._strip_actions(chunk)
+        text = self._suppress(chunk)
         if not text:
             return
 
@@ -150,36 +149,14 @@ class Speaker:
 
     # ── Internals ────────────────────────────────────────────────── #
 
-    def _strip_actions(self, chunk: str) -> str:
-        """Drop <ACTION> blocks as they stream past, not after the fact."""
-        out = ""
-        for ch in chunk:
-            if self._in_action:
-                self._pending_action += ch
-                if self._pending_action.endswith(_ACTION_CLOSE):
-                    self._in_action = False
-                    self._pending_action = ""
-                continue
+    def _suppress(self, chunk: str) -> str:
+        """Drop <ACTION> and <think> blocks as they stream past.
 
-            self._pending_action += ch
-            if self._pending_action.endswith(_ACTION_OPEN):
-                # Everything before the tag is real speech.
-                out += self._pending_action[: -len(_ACTION_OPEN)]
-                self._pending_action = ""
-                self._in_action = True
-                continue
-
-            # Keep only as much as could still become an opening tag.
-            if not _ACTION_OPEN.startswith(self._pending_action[-len(_ACTION_OPEN):]):
-                keep = ""
-                for size in range(len(_ACTION_OPEN) - 1, 0, -1):
-                    if _ACTION_OPEN.startswith(self._pending_action[-size:]):
-                        keep = self._pending_action[-size:]
-                        break
-                out += self._pending_action[: len(self._pending_action) - len(keep)]
-                self._pending_action = keep
-
-        return out
+        Both are the model talking to itself rather than to the listener:
+        one is a command NixOrb runs, the other is a reasoning model
+        working the problem out. Neither should be read aloud.
+        """
+        return self._filter.feed(chunk)
 
     async def _enqueue(self, item: str | None) -> None:
         if self._queue is not None and not self._stopped:

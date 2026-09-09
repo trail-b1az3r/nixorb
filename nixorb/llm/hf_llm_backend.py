@@ -281,7 +281,12 @@ class HuggingFaceLLMBackend:
                 log.debug("LLM: malformed tool_call block ignored: %r", match.group(1)[:200])
             return ""
 
-        cleaned = _TOOL_CALL_RE.sub(_pull, text).strip()
+        # No .strip() here. This runs on every streamed token, and llama.cpp
+        # emits them with their leading space attached (" the", " quick").
+        # Stripping each one ran the whole answer together —
+        # "Iamthinkingaboutthis" — and dropped space-only tokens entirely,
+        # because "" is falsy at the call site.
+        cleaned = _TOOL_CALL_RE.sub(_pull, text)
         return cleaned, calls
 
     # ── generation ───────────────────────────────────────────────── #

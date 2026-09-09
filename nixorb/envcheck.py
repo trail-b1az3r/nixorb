@@ -269,6 +269,54 @@ def problems() -> list[str]:
     return lines
 
 
+def action_report() -> list[str]:
+    """Whether NixOrb can run commands on this machine, and what gates them.
+
+    "It can't run things on my PC" has several causes that look identical
+    from outside: running as root disables execution outright, a missing
+    confirmation dialog denies every command, and bubblewrap being absent
+    silently drops the sandbox.
+    """
+    import os
+    import shutil
+
+    from nixorb.settings import Settings
+
+    settings = Settings.load()
+    lines: list[str] = []
+
+    if os.geteuid() == 0:
+        lines.append(
+            "  ❌ running as root — command execution is refused entirely; "
+            "start NixOrb as your normal user"
+        )
+    else:
+        lines.append("  ✅ command execution available")
+
+    if settings.require_action_confirmation:
+        lines.append(
+            "  ✅ every command asks first (require_action_confirmation)"
+        )
+    else:
+        lines.append(
+            "  ⚠️  commands run without asking "
+            "(require_action_confirmation = false)"
+        )
+
+    if settings.sandbox_actions:
+        if shutil.which("bwrap"):
+            lines.append("  ✅ commands run inside a bubblewrap sandbox")
+        else:
+            lines.append(
+                "  ⚠️  sandbox_actions is on but bwrap is not installed — "
+                "commands run unsandboxed. Install bubblewrap."
+            )
+    else:
+        lines.append("  ⚠️  commands run unsandboxed (sandbox_actions = false)")
+
+    return lines
+
+
 def torch_report() -> list[str]:
     """Whether torch and torchaudio import, and which CUDA build they are.
 
@@ -350,3 +398,8 @@ def report() -> list[str]:
     lines.extend(torch_report())
 
     return lines
+
+
+def full_report() -> list[str]:
+    """Everything `nixorb check` prints about this installation."""
+    return report() + ["", "Running commands:"] + action_report()
