@@ -61,7 +61,7 @@ async def test_search_fails_gracefully():
 async def test_search_formatted_no_results():
     from nixorb.utils.web_search import search_formatted
 
-    async def _none(_query, _max):
+    async def _none(_query, _max, **_kwargs):
         return []
 
     with patch("nixorb.utils.web_search.search", _none):
@@ -73,7 +73,7 @@ async def test_search_formatted_no_results():
 async def test_search_formatted_includes_titles_and_urls():
     from nixorb.utils.web_search import search_formatted
 
-    async def _one(_query, _max):
+    async def _one(_query, _max, **_kwargs):
         return [{"title": "T", "snippet": "S", "url": "https://u"}]
 
     with patch("nixorb.utils.web_search.search", _one):
@@ -98,3 +98,103 @@ async def test_wants_screen_detection():
     assert _wants_screen("what's on my screen")
     assert _wants_screen("see my screen")
     assert not _wants_screen("play some music")
+
+
+# ── providers ────────────────────────────────────────────────────── #
+
+class TestSearchProviders:
+    """DuckDuckGo's HTML endpoint is scraped, so it rate-limits and
+    changes shape. hypernix's search_web_non_api covers several engines
+    and needs no API key, so it stands behind (or in front of) it."""
+
+    async def test_duckduckgo_is_tried_first_by_default(self, monkeypatch):
+        from nixorb.utils import web_search
+
+        called = []
+
+        async def fake(provider, query, max_results, settings):
+            called.append(provider)
+            return [{"title": "t", "snippet": "s", "url": "u"}]
+
+        monkeypatch.setattr(web_search, "_search_with", fake)
+        await web_search.search("anything")
+        assert called == ["duckduckgo"]
+
+    async def test_hypernix_answers_when_scraping_comes_back_empty(
+        self, monkeypatch
+    ):
+        from nixorb.utils import web_search
+
+        called = []
+
+        async def fake(provider, query, max_results, settings):
+            called.append(provider)
+            if provider == "duckduckgo":
+                return []
+            return [{"title": "t", "snippet": "s", "url": "u"}]
+
+        monkeypatch.setattr(web_search, "_search_with", fake)
+        results = await web_search.search("anything")
+        assert called == ["duckduckgo", "hypernix"]
+        assert results[0]["title"] == "t"
+
+    async def test_the_provider_can_be_pinned(self, monkeypatch):
+        from nixorb.settings import Settings
+        from nixorb.utils import web_search
+
+        called = []
+
+        async def fake(provider, query, max_results, settings):
+            called.append(provider)
+            return [{"title": "t", "snippet": "s", "url": "u"}]
+
+        monkeypatch.setattr(web_search, "_search_with", fake)
+        await web_search.search(
+            "x", settings=Settings(web_search_provider="hypernix")
+        )
+        assert called == ["hypernix"]
+
+        called.clear()
+        await web_search.search(
+            "x", settings=Settings(web_search_provider="duckduckgo")
+        )
+        assert called == ["duckduckgo"]
+
+    async def test_both_failing_returns_nothing_rather_than_raising(
+        self, monkeypatch
+    ):
+        from nixorb.utils import web_search
+
+        async def nothing(provider, query, max_results, settings):
+            return []
+
+        monkeypatch.setattr(web_search, "_search_with", nothing)
+        assert await web_search.search("x") == []
+
+    def test_hypernix_result_keys_are_normalised(self):
+        from nixorb.utils.web_search import _normalise
+
+        assert _normalise({"title": "T", "body": "B", "href": "U"}) == {
+            "title": "T", "snippet": "B", "url": "U",
+        }
+        assert _normalise({"name": "T", "description": "D", "link": "L"}) == {
+            "title": "T", "snippet": "D", "url": "L",
+        }
+
+    async def test_a_hypernix_failure_does_not_escape(self, monkeypatch):
+        from nixorb.utils import web_search
+
+        class _Boom:
+            def __init__(self, settings=None):
+                pass
+
+            def supports(self, name):
+                return True
+
+            async def search_web(self, *a, **k):
+                raise RuntimeError("network down")
+
+        monkeypatch.setattr(
+            "nixorb.utils.hypernix_client.HypernixClient", _Boom
+        )
+        assert await web_search._search_with("hypernix", "q", 4, None) == []

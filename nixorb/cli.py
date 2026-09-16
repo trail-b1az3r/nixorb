@@ -315,6 +315,54 @@ def check() -> None:
 
 
 @app.command()
+def models(
+    search: str = typer.Argument("", help="Only show models matching this."),
+    remote: bool = typer.Option(
+        False, "--remote", "-r", help="List what the configured T1 API serves."
+    ),
+) -> None:
+    """List the models you can name in `llm_model`."""
+    settings = Settings.load()
+
+    if remote:
+        base_url = str(getattr(settings, "t1_base_url", "") or "")
+        if not base_url:
+            typer.echo("No T1 API configured — set t1_base_url in your config.")
+            raise typer.Exit(1)
+
+        from nixorb.llm.t1_backend import T1Backend
+
+        health = asyncio.run(T1Backend(settings).health_check())
+        if not health["ok"]:
+            typer.echo(f"❌ {health['error']}")
+            raise typer.Exit(1)
+        names = [m for m in health["models"] if not search or search.lower() in m.lower()]
+        typer.echo(f"{len(names)} model(s) on {base_url}:")
+        for name in sorted(names):
+            typer.echo(f"  {name}")
+        return
+
+    from nixorb.utils.hypernix_client import INSTALL_HINT, HypernixClient
+
+    client = HypernixClient(settings)
+    if not client.is_available():
+        typer.echo(f"The model catalogue needs hypernix — {INSTALL_HINT}")
+        raise typer.Exit(1)
+
+    rows = client.list_models(contains=search or None)
+    if not rows:
+        typer.echo(f"No models matching {search!r}." if search else "No models found.")
+        return
+
+    width = max(len(name) for name, _, _ in rows)
+    typer.echo(f"{len(rows)} model(s) — use either column in llm_model:")
+    for name, repo_id, notes in sorted(rows):
+        typer.echo(f"  {name:<{width}}  {repo_id}")
+        if notes and search:
+            typer.echo(f"  {'':<{width}}  {notes}")
+
+
+@app.command()
 def version() -> None:
     """Show NixOrb version."""
     typer.echo(f"NixOrb {nixorb.__version__}")

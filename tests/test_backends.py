@@ -193,11 +193,36 @@ def test_huggingface_tts_falls_back_when_transformers_is_missing(caplog):
     assert "nixorb[hf]" in caplog.text
 
 
-def test_espeak_backend_skips_piper():
+def test_espeak_backend_skips_piper(monkeypatch):
+    """Asking for espeak must not quietly upgrade to Piper."""
+    import shutil
+
     from nixorb.tts.tts_factory import build_tts
 
+    real_which = shutil.which
+    monkeypatch.setattr(
+        shutil, "which",
+        lambda name, *a, **k: "/usr/bin/espeak-ng" if name == "espeak-ng"
+        else real_which(name, *a, **k),
+    )
     engine = build_tts(Settings(tts_backend="espeak"))
     assert engine._piper_available is False
+
+
+def test_an_unavailable_backend_falls_through_rather_than_going_mute(monkeypatch):
+    """espeak asked for, espeak absent: use the next one, do not go silent."""
+    import shutil
+
+    from nixorb.tts.tts_factory import build_tts
+
+    real_which = shutil.which
+    monkeypatch.setattr(
+        shutil, "which",
+        lambda name, *a, **k: None if name in ("espeak-ng", "piper-tts", "piper")
+        else real_which(name, *a, **k),
+    )
+    engine = build_tts(Settings(tts_backend="espeak"))
+    assert engine is not None
 
 
 # ── Nemotron helpers ─────────────────────────────────────────────── #
@@ -579,3 +604,62 @@ def test_latency_never_raises_for_an_unexpected_lookahead():
     engine = NemotronASREngine(Settings(asr_backend="nemotron"))
     engine._lookahead = 7  # chosen by the checkpoint, not by us
     assert engine.latency_ms > 0
+
+
+# ── TTS fallback chain ───────────────────────────────────────────── #
+
+class TestTTSChain:
+    """Piper was the hardcoded landing place for every failure.
+
+    A machine where the configured backend could not run ended up on
+    Piper, and then — with no voice model installed — on espeak, without
+    ever having been asked.
+    """
+
+    def test_the_configured_backend_always_leads(self):
+        from nixorb.tts.tts_factory import resolve_chain
+
+        assert resolve_chain(Settings(tts_backend="glados"))[0] == "glados"
+        assert resolve_chain(Settings(tts_backend="openai"))[0] == "openai"
+
+    def test_piper_is_not_the_default_landing_place(self):
+        from nixorb.tts.tts_factory import DEFAULT_FALLBACKS
+
+        assert DEFAULT_FALLBACKS[0] != "piper"
+
+    def test_the_order_is_configurable(self):
+        chain = resolve_chain_for(["openai", "espeak"])
+        assert chain == ["huggingface", "openai", "espeak"]
+
+    def test_no_backend_appears_twice(self):
+        chain = resolve_chain_for(["huggingface", "huggingface", "piper"])
+        assert len(chain) == len(set(chain))
+
+    def test_an_unknown_fallback_is_skipped(self):
+        assert "nonsense" not in resolve_chain_for(["nonsense", "espeak"])
+
+    def test_an_empty_fallback_list_still_tries_the_chosen_one(self):
+        assert resolve_chain_for([]) == ["huggingface"]
+
+    def test_an_unknown_backend_warns_and_uses_a_real_one(self, caplog):
+        from nixorb.tts.tts_factory import resolve_chain
+
+        with caplog.at_level("WARNING"):
+            chain = resolve_chain(Settings(tts_backend="nonsense"))
+        assert chain[0] in ("huggingface", "piper", "espeak")
+        assert "unknown tts_backend" in caplog.text
+
+    def test_falling_through_is_logged_loudly(self, caplog, monkeypatch):
+        from nixorb.tts.hf_tts import HuggingFaceTTS
+        from nixorb.tts.tts_factory import build_tts
+
+        with patch.object(HuggingFaceTTS, "available", False):
+            with caplog.at_level("WARNING"):
+                build_tts(Settings(tts_backend="huggingface"))
+        assert "could not be used" in caplog.text or "cannot run here" in caplog.text
+
+
+def resolve_chain_for(fallbacks):
+    from nixorb.tts.tts_factory import resolve_chain
+
+    return resolve_chain(Settings(tts_backend="huggingface", tts_fallbacks=fallbacks))

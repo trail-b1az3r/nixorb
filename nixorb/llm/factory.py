@@ -24,9 +24,10 @@ log = logging.getLogger(__name__)
 
 _ALIASES = {"hf": "huggingface", "transformers": "huggingface",
             "local": "huggingface", "openai-compatible": "openai",
-            "vllm": "openai", "lmstudio": "openai"}
+            "vllm": "openai", "lmstudio": "openai",
+            "hypernix": "t1", "t1api": "t1", "remote": "t1"}
 
-BACKENDS = ("ollama", "huggingface", "openai")
+BACKENDS = ("auto", "ollama", "huggingface", "openai", "t1")
 
 
 class LLMBackend(Protocol):
@@ -55,13 +56,52 @@ def normalise_backend(name: str | None) -> str:
     return _ALIASES.get(key, key)
 
 
+def build_t1(settings: Settings) -> Any:
+    """The T1 API backend, or None when it is not configured."""
+    if not str(getattr(settings, "t1_base_url", "") or "").strip():
+        return None
+    from nixorb.llm.t1_backend import T1Backend
+
+    return T1Backend(settings)
+
+
 def build_llm(settings: Settings) -> Any:
     """Build the configured LLM backend."""
     backend = normalise_backend(getattr(settings, "llm_backend", None))
 
+    if backend == "auto":
+        # Local when it loads, T1 when it does not. The commonest way the
+        # orb ends up mute is a local model that will not load at all.
+        from nixorb.llm.auto_backend import AutoBackend
+
+        local_name = normalise_backend(
+            getattr(settings, "llm_local_backend", "huggingface")
+        )
+        if local_name in ("auto", "t1"):
+            local_name = "huggingface"
+        local = build_llm(_with_backend(settings, local_name))
+        remote = build_t1(settings)
+        log.info(
+            "LLM: auto — local '%s', %s",
+            local_name,
+            f"T1 at {settings.t1_base_url}" if remote else "no T1 configured",
+        )
+        return AutoBackend(settings, local, remote)
+
+    if backend == "t1":
+        from nixorb.llm.t1_backend import T1Backend
+
+        log.info(
+            "LLM: using the T1 API at %s, model '%s'",
+            getattr(settings, "t1_base_url", ""),
+            getattr(settings, "t1_model", "") or "(routed by T1)",
+        )
+        return T1Backend(settings)
+
     if backend == "huggingface":
         from nixorb.llm.hf_llm_backend import HuggingFaceLLMBackend
 
+        settings = _resolve_model_name(settings)
         log.info("LLM: using HuggingFace backend, model '%s'", settings.llm_model)
         return HuggingFaceLLMBackend(settings)
 
@@ -84,6 +124,47 @@ def build_llm(settings: Settings) -> Any:
 
     log.info("LLM: using Ollama backend, model '%s'", settings.llm_model)
     return OllamaBackend(settings)
+
+
+def _resolve_model_name(settings: Settings) -> Settings:
+    """Let `llm_model` be a short catalogue name.
+
+    hypernix ships a catalogue of ~115 models, so "qwen3.5-4b" can mean
+    "Qwen/Qwen3.5-4B" without the user having to know the owner. A name
+    that is already a repo id, or that the catalogue does not know, is
+    left exactly as written.
+    """
+    name = str(getattr(settings, "llm_model", "") or "")
+    if not name or "/" in name:
+        return settings
+
+    from nixorb.utils.hypernix_client import HypernixClient
+
+    resolved = HypernixClient(settings).resolve_repo_id(name)
+    if resolved == name:
+        return settings
+
+    log.info("LLM: '%s' is '%s' in the hypernix catalogue", name, resolved)
+    try:
+        return settings.model_copy(update={"llm_model": resolved})
+    except AttributeError:  # pragma: no cover
+        return settings
+
+
+def _with_backend(settings: Settings, backend: str) -> Settings:
+    """A copy of `settings` naming a different llm_backend.
+
+    Used so `auto` can build its local half through the same factory
+    rather than a second, drifting copy of the dispatch.
+    """
+    try:
+        return settings.model_copy(update={"llm_backend": backend})
+    except AttributeError:  # pragma: no cover - a stand-in in tests
+        import copy
+
+        clone = copy.copy(settings)
+        clone.llm_backend = backend
+        return clone
 
 
 create_llm = build_llm

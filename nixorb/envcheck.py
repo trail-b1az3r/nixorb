@@ -400,6 +400,58 @@ def report() -> list[str]:
     return lines
 
 
+def integrations_report() -> list[str]:
+    """hypernix and the T1 API: installed, reachable, usable?"""
+    from nixorb.settings import Settings
+    from nixorb.utils.hypernix_client import INSTALL_HINT, HypernixClient
+
+    settings = Settings.load()
+    lines: list[str] = []
+
+    client = HypernixClient(settings)
+    if not client.is_available():
+        lines.append(f"  ⚠️  hypernix is not installed — {INSTALL_HINT}")
+    else:
+        health = client.healthcheck()
+        lines.append(
+            f"  ✅ hypernix {client.version or '?'}"
+            + (
+                f" — {health['known_models_count']} models in the catalogue"
+                if health.get("known_models_count")
+                else ""
+            )
+        )
+        if health.get("cuda_available"):
+            names = ", ".join(health.get("cuda_device_names") or [])
+            lines.append(f"       CUDA: {names or health.get('cuda_device_count')}")
+        missing = [
+            name for name in ("search_web_non_api", "download_model", "healthcheck")
+            if not client.supports(name)
+        ]
+        if missing:
+            lines.append(
+                "       this build is missing "
+                + ", ".join(missing)
+                + " — pip install -U hypernix"
+            )
+
+    base_url = str(getattr(settings, "t1_base_url", "") or "")
+    if not base_url:
+        lines.append(
+            "  ⭘ T1 API not configured — set t1_base_url to answer through it "
+            "when the local model cannot load"
+        )
+    else:
+        lines.append(f"  ⭘ T1 API configured at {base_url}")
+        lines.append("       run `nixorb status` to check it answers")
+
+    return lines
+
+
 def full_report() -> list[str]:
     """Everything `nixorb check` prints about this installation."""
-    return report() + ["", "Running commands:"] + action_report()
+    return (
+        report()
+        + ["", "Running commands:"] + action_report()
+        + ["", "Integrations:"] + integrations_report()
+    )

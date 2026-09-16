@@ -140,13 +140,32 @@ class Settings(BaseModel):
     #                 GGUF file/repo via llama-cpp-python (auto-detected)
     # "openai"      — any OpenAI-compatible HTTP API (OpenAI, vLLM, LM Studio,
     #                 llama.cpp server, TGI, ...)
-    llm_backend: str = "huggingface"
+    # "auto" prefers the local model and answers through T1 only when the
+    # local one cannot load — which is the commonest way the orb ends up
+    # with nothing to say. Name a backend directly to pin it.
+    llm_backend: str = "auto"
     # Model identifier, interpreted per-backend: an Ollama tag when
     # llm_backend="ollama", or any HF repo id / local path when
     # llm_backend="huggingface", or a model name for the OpenAI-compatible
     # endpoint when llm_backend="openai".
     llm_model: str = "empero-ai/Qwen3.8-2B-Distill-GGUF"
     ollama_host: str = "http://localhost:11434"
+    # Which local backend `llm_backend = "auto"` prefers before reaching
+    # for T1. Ignored unless llm_backend is "auto".
+    llm_local_backend: str = "huggingface"
+
+    # ── T1 API (hypernix) ────────────────────────────────────────── #
+    # A hosted answer for when the local model will not load. Leave
+    # t1_base_url blank and nothing here is ever contacted.
+    t1_base_url: str = ""
+    t1_api_key: str = ""
+    # Blank lets T1 route the request through your plan's cascade.
+    t1_model: str = ""
+    t1_timeout: float = 30.0
+
+    # Where web search goes. "auto" scrapes DuckDuckGo first and falls back
+    # to hypernix's keyless multi-engine search; "hypernix" prefers it.
+    web_search_provider: str = "auto"
     # Specific GGUF filename to pick out of a multi-file HF repo, e.g.
     # "model.Q4_K_M.gguf". Leave blank to auto-pick the first .gguf, or to
     # load full-precision/safetensors weights via transformers instead.
@@ -182,6 +201,9 @@ class Settings(BaseModel):
     # ── TTS ──────────────────────────────────────────────────────── #
     # "piper" | "glados" | "huggingface" | "openai"
     tts_backend: str = "huggingface"
+    # Tried in order when tts_backend cannot run here. The configured
+    # backend is always tried first, whatever this says.
+    tts_fallbacks: list[str] = ["huggingface", "piper", "espeak"]
     # For tts_backend="huggingface": Breeze-TTS-2 is a voice-design model (no
     # named presets) — this is fed to it as a natural-language voice instruction.
     tts_voice: str = "A calm, clear-voiced woman with a dry, confident wit and unhurried delivery."

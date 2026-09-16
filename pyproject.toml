@@ -130,6 +130,12 @@ nemotron = [
 
 # 4-bit quantisation, so a larger transformers model fits beside ASR on 8 GB.
 quant = ["bitsandbytes>=0.43"]
+# hypernix: the model catalogue, keyless web search, GGUF quantisation and
+# machine diagnostics. 0.72.5 is where download_model/preheat/healthcheck/
+# search_web_non_api settled — the names this project calls.
+hypernix = ["hypernix>=0.72.5"]
+# The T1 API client ships inside hypernix as hypernix.t1sdk.
+t1 = ["hypernix>=0.72.5"]
 
 # GGUF models via llama.cpp. Already a base dependency — this extra exists
 # so the install command the backend prints when it is missing is real.

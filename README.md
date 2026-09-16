@@ -14,7 +14,7 @@ Hub, or at NVIDIA Nemotron for streaming speech.
 | Stage | Backends | Setting |
 |-------|----------|---------|
 | **Speech → text** | `faster-whisper` (default) · `huggingface` (any ASR model) · `nemotron` | `asr_backend` |
-| **Thinking** | `ollama` (default) · `huggingface` (any causal LM) | `llm_backend` |
+| **Thinking** | `auto` (default) · `ollama` · `huggingface` (any causal LM) · `openai` · `t1` | `llm_backend` |
 | **Text → speech** | `piper` (default) · `huggingface` (any TTS model) · `espeak` | `tts_backend` |
 
 ```bash
@@ -46,6 +46,42 @@ llm_hf_model = "Qwen/Qwen2.5-3B-Instruct"  # Llama, Phi, Gemma, SmolLM, …
 # Voice — any text-to-speech model
 tts_backend  = "huggingface"
 tts_hf_repo  = "facebook/mms-tts-eng"      # SpeechT5, Bark, VITS, Parler, …
+```
+
+### When the local model won't load
+
+`llm_backend = "auto"` prefers whatever is local and answers through the
+[T1 API](https://pypi.org/project/hypernix/) only when the local model cannot
+serve — a GGUF whose architecture your llama.cpp predates, a first run with
+nothing downloaded, a machine with no GPU and no patience. The decision is
+made once at startup and logged.
+
+```toml
+llm_backend  = "auto"          # local first, T1 as the safety net
+t1_base_url  = "https://t1.example.org"
+t1_api_key   = "…"
+t1_model     = ""              # blank lets T1 route through your plan
+```
+
+```bash
+pip install 'nixorb[t1]'
+nixorb models --remote         # what your T1 server serves
+```
+
+Leave `t1_base_url` blank and nothing is ever contacted — `auto` is then
+just the local backend with a clearer error.
+
+### Naming models the short way
+
+With `nixorb[hypernix]` installed, `llm_model` accepts any name from
+hypernix's catalogue, so you needn't know the owner:
+
+```bash
+nixorb models qwen     # 23 matches, name and repo id side by side
+```
+
+```toml
+llm_model = "qwen3.5-4b"   # resolves to Qwen/Qwen3.5-4B
 ```
 
 ### Any Piper voice
@@ -285,6 +321,7 @@ and whether the configured model is installed.
 | Config changes do nothing | Fixed in 2.0.15. Before that, `config/default.toml` was never read at all, a mistyped key was silently ignored, and one badly-typed value reverted the whole file to defaults. `nixorb check` and the log now name the offending key. |
 | It reads its thinking aloud, run together, with no answer | Fixed in 2.0.15. `<think>` blocks are suppressed, streamed tokens keep their spaces, and `llm_max_tokens` defaults to 4096 so a reasoning model can finish thinking *and* answer. |
 | It won't run commands | `nixorb check` now says why: running as root refuses execution outright, and confirmation/sandbox state is listed. Commands the model only weighed up inside `<think>` are never run. |
+| It speaks through Piper although I chose something else | Fixed in 2.1.0. Piper used to be the hardcoded landing place for every failure. The order is `tts_fallbacks` now, the configured backend always leads, and every fall-through is logged with what to install. |
 | Piper only ever uses one voice | Fixed in 2.0.13 — before that it searched disk only, so any voice the installer had not fetched fell back to espeak. Set `tts_voice` to any name from `rhasspy/piper-voices`. |
 | It speaks with espeak although `tts_backend = "piper"` | The log line starting `TTS:` says why: no `piper-tts` binary, or the voice could not be fetched. A `tts_voice` written as prose (the stock default, meant for the HF backend) now falls back to `en_US-lessac-medium` rather than to espeak. |
 | Custom wake word ignored | `wake_word_model` must be an openwakeword `.onnx`/`.tflite` path, or one of its bundled names. A Hugging Face repo of a transformers audio classifier is a different kind of model and openwakeword cannot load it — train one with openwakeword's tools instead. |

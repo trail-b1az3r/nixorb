@@ -15,7 +15,9 @@ DUCKDUCKGO_URL = "https://html.duckduckgo.com/html/"
 REQUEST_TIMEOUT = 15
 
 
-async def search_formatted(query: str, max_results: int = 4) -> str:
+async def search_formatted(
+    query: str, max_results: int = 4, *, settings: object | None = None
+) -> str:
     """Search the web and return formatted results.
 
     Args:
@@ -26,7 +28,7 @@ async def search_formatted(query: str, max_results: int = 4) -> str:
         Formatted search results for LLM context
     """
     try:
-        results = await search(query, max_results)
+        results = await search(query, max_results, settings=settings)
         if not results:
             return "\n[Web search: No search results found]\n"
 
@@ -43,14 +45,73 @@ async def search_formatted(query: str, max_results: int = 4) -> str:
         return f"\n[Web search: Error — {exc}]\n"
 
 
-async def search(query: str, max_results: int = 4) -> list[dict]:
-    """Search DuckDuckGo and return parsed results. Never raises."""
-    try:
-        html = await _fetch(query)
-    except Exception as exc:
-        log.warning("Web search fetch failed: %s", exc)
-        return []
-    return parse_results(html, max_results)
+async def search(
+    query: str, max_results: int = 4, *, settings: object | None = None
+) -> list[dict]:
+    """Search the web and return parsed results. Never raises.
+
+    DuckDuckGo's HTML endpoint is scraped, so it rate-limits and
+    occasionally changes shape. hypernix ships `search_web_non_api`, which
+    covers several engines and needs no API key, so it is tried when
+    scraping comes back empty — and first when `web_search_provider` says
+    so.
+    """
+    provider = str(getattr(settings, "web_search_provider", "auto") or "auto")
+    provider = provider.strip().lower()
+
+    order: tuple[str, ...]
+    if provider == "hypernix":
+        order = ("hypernix", "duckduckgo")
+    elif provider == "duckduckgo":
+        order = ("duckduckgo",)
+    else:
+        order = ("duckduckgo", "hypernix")
+
+    for name in order:
+        results = await _search_with(name, query, max_results, settings)
+        if results:
+            if name != order[0]:
+                log.info("Web search: answered by %s", name)
+            return results
+    return []
+
+
+async def _search_with(
+    provider: str, query: str, max_results: int, settings: object | None
+) -> list[dict]:
+    if provider == "duckduckgo":
+        try:
+            html = await _fetch(query)
+        except Exception as exc:
+            log.warning("Web search: DuckDuckGo fetch failed: %s", exc)
+            return []
+        return parse_results(html, max_results)
+
+    if provider == "hypernix":
+        from nixorb.utils.hypernix_client import HypernixClient
+
+        client = HypernixClient(settings)
+        if not client.supports("search_web_non_api"):
+            return []
+        try:
+            rows = await client.search_web(query, max_results=max_results)
+        except Exception as exc:
+            log.warning("Web search: hypernix search failed: %s", exc)
+            return []
+        return [_normalise(row) for row in rows][:max_results]
+
+    return []
+
+
+def _normalise(row: dict) -> dict:
+    """hypernix's result keys, mapped onto the shape callers expect."""
+    return {
+        "title": str(row.get("title") or row.get("name") or "").strip(),
+        "snippet": str(
+            row.get("snippet") or row.get("body") or row.get("description") or ""
+        ).strip(),
+        "url": str(row.get("url") or row.get("href") or row.get("link") or "").strip(),
+    }
 
 
 async def _fetch(query: str) -> str:

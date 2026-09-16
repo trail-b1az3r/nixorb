@@ -1,3 +1,3 @@
 """NixOrb - Floating AI assistant orb for Arch Linux + KDE Plasma 6."""
 
-__version__ = "2.0.15"
+__version__ = "2.1.0"

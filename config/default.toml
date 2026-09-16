@@ -35,7 +35,7 @@ microphone_name = ""
 # "ollama" (default, local, no API keys), "huggingface" (any local
 # transformers or GGUF model), or "openai" (any OpenAI-compatible endpoint —
 # real OpenAI, or a local vLLM / TGI / LM Studio / llama.cpp server).
-llm_backend = "huggingface"
+llm_backend = "auto"
 # An Ollama tag when llm_backend="ollama", or any HF repo id / local path
 # when llm_backend="huggingface", or the served model name when
 # llm_backend="openai".
@@ -119,3 +119,26 @@ hf_device = "auto"
 hf_cache_dir = ""
 # Off by default: this executes Python from the model repo.
 hf_trust_remote_code = false
+
+# ── T1 API (hypernix) ─────────────────────────────────────────────── #
+# Where a turn goes when the local model cannot load. Leave t1_base_url
+# blank and nothing here is ever contacted.
+#   pip install 'nixorb[t1]'
+t1_base_url = ""
+t1_api_key = ""
+# Blank lets T1 route through your plan's cascade rather than pinning one.
+t1_model = ""
+t1_timeout = 30.0
+# Which local backend "auto" tries before reaching for T1.
+llm_local_backend = "huggingface"
+
+# ── Speech synthesis fallbacks ────────────────────────────────────── #
+# Tried in order when tts_backend cannot run here. The configured backend
+# is always tried first, whatever this says. Piper is not first: it needs
+# a separately-installed binary and a downloaded voice.
+tts_fallbacks = ["huggingface", "piper", "espeak"]
+
+# ── Web search ────────────────────────────────────────────────────── #
+# "auto" scrapes DuckDuckGo first and falls back to hypernix's keyless
+# multi-engine search; "hypernix" prefers it; "duckduckgo" pins scraping.
+web_search_provider = "auto"

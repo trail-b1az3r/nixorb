@@ -1,3 +1,54 @@
+## [2.1.0] — 2026-09-16
+
+An answer even when the local model will not load, hypernix wired to its
+real API, and Piper demoted from "wherever failure lands".
+
+### Added
+
+- **The T1 API as a backend, and `llm_backend = "auto"`.** A local model
+  that will not load is the commonest way the orb ends up mute: it starts,
+  listens, transcribes, and then has nothing to answer with. `auto`
+  health-checks the local backend once at startup and answers through
+  hypernix's T1 API when it cannot serve, saying in the log why it
+  switched. Chat runs over T1's hyperlink sessions, so the conversation is
+  persisted server-side and the thread survives a reconnect. Leave
+  `t1_base_url` blank and nothing is ever contacted.
+
+  `auto` is the new default for `llm_backend`.
+
+- **`nixorb models`** — the ~115-model hypernix catalogue, name and repo id
+  side by side, with `--remote` for what your T1 server actually serves.
+
+- **Short model names.** `llm_model = "qwen3.5-4b"` resolves through the
+  catalogue to `Qwen/Qwen3.5-4B`. A full repo id, or a name the catalogue
+  does not know, is left exactly as written.
+
+- **Keyless web search.** DuckDuckGo's HTML endpoint is scraped, so it
+  rate-limits and changes shape. hypernix's `search_web_non_api` covers
+  several engines with no API key, and now answers when scraping comes
+  back empty — or first, with `web_search_provider = "hypernix"`.
+
+- **`nixorb check` reports hypernix and T1**: version, catalogue size,
+  CUDA, and whether this hypernix build has the entry points NixOrb calls.
+
+### Fixed
+
+- **The hypernix integration never worked at all.** It called
+  `hypernix.fetch()` and `hypernix.infer()`; neither function exists, in
+  0.72.5 or any other release, so every call raised `AttributeError` the
+  moment it was reached. Rewritten against the real 0.72.5 surface —
+  `download_model`, `preheat`, `healthcheck`, `diagnostic_info`,
+  `list_models`, `resolve_repo_id`, `search_web_non_api`,
+  `calculate_vram_context` — and degrading with a pip command rather than
+  an `AttributeError` three frames down.
+
+- **Piper was the hardcoded landing place for every TTS failure.** A
+  machine where the configured backend could not run ended up on Piper,
+  and then — with no voice model installed — on espeak, without ever
+  having been asked. The order is `tts_fallbacks` now, the configured
+  backend always leads it, and every fall-through is logged with what to
+  install to fix it.
+
 ## [2.0.15] — 2026-09-09
 
 Config that did nothing, a reply that was all thinking and no answer, and
