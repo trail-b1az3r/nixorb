@@ -7,8 +7,11 @@ orb_size = 88
 orb_opacity = 1.0
 
 # ── ASR ────────────────────────────────────────────────────────── #
-# "faster_whisper" (default, CTranslate2 Whisper) or "huggingface" (any
-# transformers ASR model/pipeline — distil-whisper, Parakeet, a fine-tune...)
+# "faster_whisper" (CTranslate2 Whisper — no torch, runs anywhere),
+# "huggingface" (any transformers ASR model — distil-whisper, Parakeet,
+# a fine-tune...), "nemotron" (NVIDIA cache-aware streaming ASR), or
+# "vosk" (Kaldi — 40 MB, no torch at all).
+# `nixorb setup` picks the one this machine can run.
 asr_backend = "huggingface"
 # A faster-whisper size/repo when asr_backend="faster_whisper" (e.g.
 # "large-v3"), or any HF repo id when asr_backend="huggingface" (e.g.
@@ -58,8 +61,10 @@ llm_system_prompt = "You are NixOrb, a voice assistant running on Arch Linux wit
 action_confirm_timeout = 60.0
 
 # ── TTS ────────────────────────────────────────────────────────── #
-# "piper" (default, offline), "glados", "huggingface" (any HF
-# text-to-speech pipeline — SpeechT5, Bark, Kokoro...), or "openai".
+# "kokoro" (neural, offline, onnxruntime — no torch needed), "piper"
+# (offline, needs the piper binary), "espeak" (robotic but always there),
+# "glados", "huggingface" (any HF text-to-speech pipeline — SpeechT5,
+# Bark, Parler...), or "openai".
 tts_backend = "huggingface"
 # For tts_backend="huggingface": Breeze-TTS-2 is a voice-design model (no
 # named presets) — this is fed to it as a natural-language voice instruction.
@@ -136,7 +141,21 @@ llm_local_backend = "huggingface"
 # Tried in order when tts_backend cannot run here. The configured backend
 # is always tried first, whatever this says. Piper is not first: it needs
 # a separately-installed binary and a downloaded voice.
-tts_fallbacks = ["huggingface", "piper", "espeak"]
+tts_fallbacks = ["kokoro", "huggingface", "piper", "espeak"]
+
+# ── Kokoro ────────────────────────────────────────────────────────── #
+#   pip install 'nixorb[kokoro]'
+# An 82M-parameter neural voice that runs on onnxruntime, so it needs
+# neither torch nor CUDA. Leave both paths blank and the model (~90 MB)
+# and voice pack are fetched once into ~/.local/share/nixorb/kokoro; set
+# them to use files you already have. tts_voice holds the voice id —
+# af_heart, af_bella, am_michael, bf_emma… — and blank means af_heart.
+tts_kokoro_model = ""
+tts_kokoro_voices = ""
+
+# The language passed to backends that take one separately from the voice
+# (Kokoro, espeak). BCP-47-ish: "en-us", "en-gb", "fr-fr", "ja"…
+tts_language = "en-us"
 
 # ── Web search ────────────────────────────────────────────────────── #
 # "auto" scrapes DuckDuckGo first and falls back to hypernix's keyless

@@ -1,6 +1,7 @@
 """Build the TTS backend named by settings.
 
     tts_backend = "piper"        # offline, AUR piper-tts, espeak fallback
+    tts_backend = "kokoro"       # neural voice through onnxruntime, no torch
     tts_backend = "huggingface"  # any TTS model on the Hub
     tts_backend = "glados"       # the GLaDOS voice, via SpeechT5
     tts_backend = "openai"       # any OpenAI-compatible speech endpoint
@@ -17,14 +18,15 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _ALIASES = {"hf": "huggingface", "transformers": "huggingface",
-            "espeak-ng": "espeak", "piper-tts": "piper"}
+            "espeak-ng": "espeak", "piper-tts": "piper",
+            "kokoro-onnx": "kokoro", "onnx": "kokoro"}
 
-BACKENDS = ("piper", "huggingface", "glados", "openai", "espeak")
+BACKENDS = ("piper", "kokoro", "huggingface", "glados", "openai", "espeak")
 
 # Tried in this order when the configured backend cannot run. Piper is not
 # first: it needs a separately-installed binary and a downloaded voice, so
 # landing there by default meant landing on espeak in practice.
-DEFAULT_FALLBACKS = ("huggingface", "piper", "espeak")
+DEFAULT_FALLBACKS = ("kokoro", "huggingface", "piper", "espeak")
 
 
 def normalise_backend(name: str | None) -> str:
@@ -48,6 +50,17 @@ def _build_one(backend: str, settings: Settings) -> tuple[Any, str]:
         return None, (
             "transformers is not installed — install it with: "
             "pip install 'nixorb[hf]'"
+        )
+
+    if backend == "kokoro":
+        from nixorb.tts.kokoro_tts import KokoroTTS
+
+        kokoro = KokoroTTS(settings)
+        if kokoro.available:
+            return kokoro, ""
+        return None, (
+            "kokoro-onnx is not installed — install it with: "
+            "pip install 'nixorb[kokoro]'"
         )
 
     if backend == "glados":

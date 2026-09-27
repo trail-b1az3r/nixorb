@@ -1,3 +1,67 @@
+## [2.2.0] — 2026-09-27
+
+NixOrb configures itself for the machine it is on, and can speak and
+listen without torch at all.
+
+### Added
+
+- **`nixorb setup`, and a first start that configures itself.** Every
+  report of NixOrb "not working" in this cycle had the same shape: a
+  default aimed at a stack the machine did not have. A Nemotron
+  checkpoint wanting transformers 5.13 and a numpy numba would accept; a
+  GGUF wanting a newer llama.cpp than the installed wheel; a voice model
+  wanting torch and 8 GB of VRAM. NixOrb started cleanly every time and
+  then had nothing to say.
+
+  `nixorb setup` reads the machine first — RAM, free disk, GPU, which
+  packages and binaries are actually present — and writes settings that
+  will run there, preferring the boring option every time:
+  faster-whisper over Nemotron, a running Ollama over an in-process
+  GGUF, a voice that exists over one that must be fetched and built. It
+  prints every choice with the reason for it, names what to install to
+  do better, and `--dry-run` shows the config without writing it.
+
+  The same choices are now made automatically on a first start, so
+  someone who `pip install`s NixOrb and runs it never has to know the
+  command exists. It happens once — a config file you have edited is
+  never touched.
+
+- **Kokoro as a TTS backend** — `pip install 'nixorb[kokoro]'`. An
+  82M-parameter neural voice that runs on onnxruntime, so it needs
+  neither torch nor CUDA, and it fetches its own model and voice pack on
+  first use. This is the best voice a plain machine can reach, and it is
+  now first in `tts_fallbacks`. Voices are named ids (`af_heart`,
+  `am_michael`, `bf_emma`…) set through `tts_voice`.
+
+- **Vosk as an ASR backend** — `pip install 'nixorb[vosk]'`. Kaldi, about
+  40 MB, no torch and no CUDA, and it downloads its own model from a bare
+  language tag (`asr_model = "en-us"`). Between Kokoro and Vosk, NixOrb
+  now hears and speaks on a machine with no ML stack installed at all.
+
+- **hypernix 0.72.6's curated catalogue in `nixorb models`.**
+  `list_models()` returns 115 rows, most of which nobody should pick
+  blind; `hyped_agent.CURATED_MODELS` is 44 with a human label, a family
+  and a badge. `nixorb models` now shows those, grouped by family, and
+  `--all` still gives the full catalogue.
+
+- **`tts_language`, `tts_kokoro_model`, `tts_kokoro_voices`** — the
+  language for backends that take one separately from the voice, and
+  paths to Kokoro files you already have rather than re-fetching them.
+
+### Changed
+
+- `install.sh` runs `nixorb setup --yes` before it finishes, so a fresh
+  install starts with settings that fit the machine it was installed on.
+
+- `tts_fallbacks` now leads with `kokoro`.
+
+- The minimum hypernix is 0.72.6, for the curated catalogue.
+
+- `machine.probe()` takes `cuda=False`, which keeps the cheap checks but
+  skips the subprocess `import torch`. That import costs seconds on a
+  cold page cache and only ever feeds a note about a CPU-only build, so
+  the first start does without it.
+
 ## [2.1.0] — 2026-09-16
 
 An answer even when the local model will not load, hypernix wired to its

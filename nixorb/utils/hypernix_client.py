@@ -9,6 +9,7 @@ This is written against the real 0.72.5 surface:
 
   download_model / preheat    fetch and warm a model
   list_models / resolve_*     the model catalogue, so short names work
+  curated_models              0.72.6's hand-picked 44, with human labels
   healthcheck / diagnostic_info   what `nixorb check` reports
   search_web_non_api          web search with no API key to manage
   calculate_vram_context      how much context this card can actually hold
@@ -29,7 +30,7 @@ log = logging.getLogger(__name__)
 INSTALL_HINT = "pip install 'nixorb[hypernix]'"
 
 #: The oldest release carrying the API this module calls.
-MIN_VERSION = (0, 72, 5)
+MIN_VERSION = (0, 72, 6)
 
 
 class HypernixUnavailable(RuntimeError):
@@ -135,6 +136,47 @@ class HypernixClient:
         except Exception as exc:
             log.debug("hypernix: list_models failed (%s)", exc)
             return []
+
+    def curated_models(
+        self, *, contains: str | None = None, local_only: bool = False
+    ) -> list[dict[str, str]]:
+        """The hand-picked catalogue hypernix 0.72.6 added.
+
+        `list_models()` returns everything hypernix knows — 115 rows, most
+        of which nobody should pick blind. `hyped_agent.CURATED_MODELS` is
+        44 entries with a human label, a family and a badge, which is what
+        a chooser should actually show.
+        """
+        if self._hn is None:
+            return []
+        try:
+            agent = getattr(self._hn, "hyped_agent", None)
+            entries = getattr(agent, "CURATED_MODELS", None) if agent else None
+            if not entries:
+                return []
+        except Exception as exc:
+            log.debug("hypernix: curated catalogue unavailable (%s)", exc)
+            return []
+
+        rows: list[dict[str, str]] = []
+        for entry in entries:
+            provider = str(getattr(entry, "provider", "local") or "local")
+            if local_only and provider != "local":
+                continue
+            row = {
+                "short": str(getattr(entry, "short", "")),
+                "repo_id": str(getattr(entry, "repo_id", "")),
+                "label": str(getattr(entry, "label", "")),
+                "family": str(getattr(entry, "family", "")),
+                "badge": str(getattr(entry, "badge", "")),
+                "provider": provider,
+            }
+            if contains:
+                haystack = " ".join(row.values()).lower()
+                if contains.lower() not in haystack:
+                    continue
+            rows.append(row)
+        return rows
 
     # ── diagnostics ──────────────────────────────────────────────── #
 

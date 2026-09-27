@@ -231,6 +231,16 @@ EOF
 
 echo -e "${GREEN}✓ Desktop entry created${NC}"
 
+# ── Configure for this machine ─────────────────────────────────── #
+# The shipped defaults aim high. This looks at what is actually
+# installed and writes settings that will run here, rather than leaving
+# the first launch to fail on a model this machine cannot load.
+echo ""
+echo -e "${BLUE}→ Configuring NixOrb for this machine…${NC}"
+"$VENV_DIR/bin/nixorb" setup --yes || {
+    echo -e "${YELLOW}⚠ Automatic setup failed — run 'nixorb setup' yourself.${NC}"
+}
+
 # ── KDE Shortcut ───────────────────────────────────────────────── #
 echo ""
 echo -e "${YELLOW}⚠ Important: Set up KDE shortcut:${NC}"

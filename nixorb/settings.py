@@ -203,7 +203,12 @@ class Settings(BaseModel):
     tts_backend: str = "huggingface"
     # Tried in order when tts_backend cannot run here. The configured
     # backend is always tried first, whatever this says.
-    tts_fallbacks: list[str] = ["huggingface", "piper", "espeak"]
+    tts_fallbacks: list[str] = ["kokoro", "huggingface", "piper", "espeak"]
+    # Kokoro needs an ONNX model and a voice pack. Leave both blank and
+    # NixOrb fetches them once into ~/.local/share/nixorb/kokoro.
+    tts_kokoro_model: str = ""
+    tts_kokoro_voices: str = ""
+    tts_language: str = "en-us"
     # For tts_backend="huggingface": Breeze-TTS-2 is a voice-design model (no
     # named presets) — this is fed to it as a natural-language voice instruction.
     tts_voice: str = "A calm, clear-voiced woman with a dry, confident wit and unhurried delivery."
