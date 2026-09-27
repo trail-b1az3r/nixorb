@@ -20,7 +20,9 @@ class TestSettings:
 
     def test_default_settings(self):
         s = Settings()
-        assert s.llm_backend == "huggingface"
+        # "auto": local first, T1 only when the local model cannot load.
+        assert s.llm_backend == "auto"
+        assert s.llm_local_backend == "huggingface"
         assert s.llm_model == "empero-ai/Qwen3.8-2B-Distill-GGUF"
         assert s.tts_backend == "huggingface"
         # Off by default — openwakeword is the optional 'wakeword' extra.

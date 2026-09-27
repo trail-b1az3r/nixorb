@@ -19,6 +19,7 @@ import asyncio
 import logging
 import shutil
 import subprocess
+from typing import Any
 
 import typer
 
@@ -312,6 +313,157 @@ def check() -> None:
     for dep in recommended:
         found = shutil.which(dep)
         typer.echo(f"  {'✅' if found else '❌'} {dep}")
+
+
+@app.command()
+def setup(
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Write the config without asking."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Show the plan and change nothing."
+    ),
+) -> None:
+    """Look at this machine and configure NixOrb to suit it.
+
+    The shipped defaults aim high. This picks what will actually run
+    here — and says what to install to do better.
+    """
+    from nixorb.setup_wizard import apply_plan, build_plan
+
+    settings = Settings.load()
+    typer.echo("Looking at this machine…\n")
+    plan = build_plan(settings)
+    machine = plan.machine
+    assert machine is not None
+
+    typer.echo("This machine:")
+    typer.echo(f"  Python {machine.python}   RAM {machine.ram_gb or '?'} GB"
+               f"   free disk {machine.disk_free_gb or '?'} GB")
+    if machine.has_gpu:
+        typer.echo(
+            f"  GPU: {machine.gpu_name}, {machine.vram_gb} GB"
+            + ("" if machine.torch_cuda else "  (torch cannot use it)")
+        )
+    else:
+        typer.echo("  GPU: none detected — everything will run on the CPU")
+
+    present = [
+        name for name, value in (
+            (f"torch {machine.torch}", machine.torch),
+            (f"transformers {machine.transformers}", machine.transformers),
+            (f"faster-whisper {machine.faster_whisper}", machine.faster_whisper),
+            (f"llama-cpp-python {machine.llama_cpp}", machine.llama_cpp),
+            (f"hypernix {machine.hypernix}", machine.hypernix),
+            ("piper-tts", machine.piper_binary),
+            ("espeak-ng", machine.espeak),
+            ("ollama (running)", machine.ollama_reachable),
+        ) if value
+    ]
+    typer.echo("  Installed: " + (", ".join(present) if present else "nothing relevant"))
+
+    typer.echo("\nWhat NixOrb will use:")
+    width = max((len(c.key) for c in plan.choices), default=0)
+    for choice in plan.choices:
+        typer.echo(f"  {choice.key:<{width}} = {choice.value!r}")
+        typer.echo(f"  {'':<{width}}   {choice.why}")
+
+    if plan.warnings:
+        typer.echo("\nWorth knowing:")
+        for warning in plan.warnings:
+            typer.echo(f"  ⚠  {warning}")
+
+    if dry_run:
+        typer.echo("\n(--dry-run: nothing was written)")
+        return
+
+    if not yes:
+        typer.echo("")
+        if not typer.confirm(f"Write this to {config_file()}?", default=True):
+            typer.echo("Nothing written.")
+            raise typer.Exit(1)
+
+    apply_plan(plan, settings).save()
+    typer.echo(f"\n✅ Written to {config_file()}")
+    typer.echo("   Start it with:  nixorb start")
+    typer.echo("   Check it with:  nixorb check")
+
+
+def config_file() -> Any:
+    from nixorb.settings import config_path
+
+    return config_path()
+
+
+@app.command()
+def models(
+    search: str = typer.Argument("", help="Only show models matching this."),
+    remote: bool = typer.Option(
+        False, "--remote", "-r", help="List what the configured T1 API serves."
+    ),
+    every: bool = typer.Option(
+        False, "--all", "-a", help="The full catalogue, not just the curated list."
+    ),
+) -> None:
+    """List the models you can name in `llm_model`."""
+    settings = Settings.load()
+
+    if remote:
+        base_url = str(getattr(settings, "t1_base_url", "") or "")
+        if not base_url:
+            typer.echo("No T1 API configured — set t1_base_url in your config.")
+            raise typer.Exit(1)
+
+        from nixorb.llm.t1_backend import T1Backend
+
+        health = asyncio.run(T1Backend(settings).health_check())
+        if not health["ok"]:
+            typer.echo(f"❌ {health['error']}")
+            raise typer.Exit(1)
+        names = [m for m in health["models"] if not search or search.lower() in m.lower()]
+        typer.echo(f"{len(names)} model(s) on {base_url}:")
+        for name in sorted(names):
+            typer.echo(f"  {name}")
+        return
+
+    from nixorb.utils.hypernix_client import INSTALL_HINT, HypernixClient
+
+    client = HypernixClient(settings)
+    if not client.is_available():
+        typer.echo(f"The model catalogue needs hypernix — {INSTALL_HINT}")
+        raise typer.Exit(1)
+
+    # The curated list first: 44 entries with a human label, rather than
+    # 115 rows nobody should pick from blind. --all shows everything.
+    curated = client.curated_models(contains=search or None, local_only=not every)
+    if curated and not every:
+        width = max(len(row["short"]) for row in curated)
+        typer.echo(
+            f"{len(curated)} curated model(s) — use either column in llm_model"
+            "   (--all for the full catalogue):"
+        )
+        family = ""
+        for row in sorted(curated, key=lambda r: (r["family"], r["short"])):
+            if row["family"] != family:
+                family = row["family"]
+                typer.echo(f"\n  {family}")
+            badge = f"{row['badge']} " if row["badge"] else "  "
+            typer.echo(f"    {badge}{row['short']:<{width}}  {row['repo_id']}")
+            if row["label"]:
+                typer.echo(f"      {'':<{width}}  {row['label']}")
+        return
+
+    rows = client.list_models(contains=search or None)
+    if not rows:
+        typer.echo(f"No models matching {search!r}." if search else "No models found.")
+        return
+
+    width = max(len(name) for name, _, _ in rows)
+    typer.echo(f"{len(rows)} model(s) — use either column in llm_model:")
+    for name, repo_id, notes in sorted(rows):
+        typer.echo(f"  {name:<{width}}  {repo_id}")
+        if notes and search:
+            typer.echo(f"  {'':<{width}}  {notes}")
 
 
 @app.command()

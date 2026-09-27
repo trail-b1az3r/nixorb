@@ -130,6 +130,16 @@ nemotron = [
 
 # 4-bit quantisation, so a larger transformers model fits beside ASR on 8 GB.
 quant = ["bitsandbytes>=0.43"]
+# A good neural voice with no torch anywhere: 82M params through onnxruntime.
+kokoro = ["kokoro-onnx>=0.4"]
+# Offline Kaldi ASR — 40 MB, no torch, fetches its own model by language.
+vosk = ["vosk>=0.3.45"]
+# hypernix: the model catalogue, keyless web search, GGUF quantisation and
+# machine diagnostics. 0.72.5 is where download_model/preheat/healthcheck/
+# search_web_non_api settled — the names this project calls.
+hypernix = ["hypernix>=0.72.6"]
+# The T1 API client ships inside hypernix as hypernix.t1sdk.
+t1 = ["hypernix>=0.72.6"]
 
 # GGUF models via llama.cpp. Already a base dependency — this extra exists
 # so the install command the backend prints when it is missing is real.

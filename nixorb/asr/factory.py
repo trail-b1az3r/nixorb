@@ -3,6 +3,7 @@
     asr_backend = "faster_whisper"   # CTranslate2 Whisper, self-contained
     asr_backend = "huggingface"      # any ASR model on the Hub
     asr_backend = "nemotron"         # NVIDIA Nemotron 3.5, native streaming
+    asr_backend = "vosk"             # Kaldi, offline, tiny, no torch
 
 All three expose the same surface (``name``, ``supports_streaming``,
 ``is_loaded``, ``preload``, ``unload``, ``stop_recording``,
@@ -28,9 +29,10 @@ _ALIASES = {
     "transformers": "huggingface",
     "nvidia": "nemotron",
     "nemotron-3.5": "nemotron",
+    "kaldi": "vosk",
 }
 
-BACKENDS = ("faster_whisper", "huggingface", "nemotron")
+BACKENDS = ("faster_whisper", "huggingface", "nemotron", "vosk")
 
 
 def normalise_backend(name: str | None) -> str:
@@ -66,6 +68,12 @@ def build_asr(settings: Settings) -> Any:
             "checkpoint — using the huggingface backend instead", model_id,
         )
         backend = "huggingface"
+
+    if backend == "vosk":
+        from nixorb.asr.vosk_asr import VoskASREngine
+
+        log.info("ASR: using Vosk backend, model '%s'", model_id or "auto")
+        return VoskASREngine(settings)
 
     if backend == "nemotron":
         from nixorb.asr.nemotron_asr import NemotronASREngine

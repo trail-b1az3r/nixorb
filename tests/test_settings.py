@@ -7,7 +7,9 @@ from nixorb.settings import _CONFIG_ENV, Settings
 def test_defaults():
     """Local-only: bundled HuggingFace models, no external server or binary to install."""
     s = Settings()
-    assert s.llm_backend == "huggingface"
+    # "auto": local first, T1 only when the local model cannot load.
+    assert s.llm_backend == "auto"
+    assert s.llm_local_backend == "huggingface"
     assert s.llm_model == "empero-ai/Qwen3.8-2B-Distill-GGUF"
     assert s.ollama_host == "http://localhost:11434"
     assert s.tts_backend == "huggingface"
@@ -52,9 +54,25 @@ def test_save_and_reload(tmp_path, monkeypatch):
 
 
 def test_load_missing_config_returns_defaults(tmp_path, monkeypatch):
-    cfg = tmp_path / "nonexistent.toml"
-    monkeypatch.setenv(_CONFIG_ENV, str(cfg))
-    assert Settings.load().llm_backend == "huggingface"
+    """No user config is not an error — it is just the defaults."""
+    # Both layers absent, so this is the field defaults and nothing else.
+    # (Leaving the packaged layer in would compare against whatever
+    # default.toml happens to say, which differs between a checkout and an
+    # installed copy — and that is a layering test, below, not this one.)
+    monkeypatch.setenv(_CONFIG_ENV, str(tmp_path / "nonexistent.toml"))
+    monkeypatch.setenv("NIXORB_DEFAULT_CONFIG", str(tmp_path / "no-defaults.toml"))
+    assert Settings.load() == Settings()
+
+
+def test_a_missing_user_config_still_gets_the_packaged_defaults(
+    tmp_path, monkeypatch
+):
+    """The packaged default.toml is a layer, so it applies on its own."""
+    packaged = tmp_path / "default.toml"
+    packaged.write_text('llm_model = "from-the-packaged-file"\n')
+    monkeypatch.setenv(_CONFIG_ENV, str(tmp_path / "nonexistent.toml"))
+    monkeypatch.setenv("NIXORB_DEFAULT_CONFIG", str(packaged))
+    assert Settings.load().llm_model == "from-the-packaged-file"
 
 
 def test_none_values_not_in_toml(tmp_path, monkeypatch):

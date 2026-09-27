@@ -13,9 +13,9 @@ Hub, or at NVIDIA Nemotron for streaming speech.
 
 | Stage | Backends | Setting |
 |-------|----------|---------|
-| **Speech → text** | `faster-whisper` (default) · `huggingface` (any ASR model) · `nemotron` | `asr_backend` |
-| **Thinking** | `ollama` (default) · `huggingface` (any causal LM) | `llm_backend` |
-| **Text → speech** | `piper` (default) · `huggingface` (any TTS model) · `espeak` | `tts_backend` |
+| **Speech → text** | `faster-whisper` (default) · `huggingface` (any ASR model) · `nemotron` · `vosk` | `asr_backend` |
+| **Thinking** | `auto` (default) · `ollama` · `huggingface` (any causal LM) · `openai` · `t1` | `llm_backend` |
+| **Text → speech** | `kokoro` · `piper` · `huggingface` (any TTS model) · `glados` · `openai` · `espeak` | `tts_backend` |
 
 ```bash
 pip install 'nixorb[hf]'        # any Hugging Face ASR / TTS / LLM
@@ -47,6 +47,64 @@ llm_hf_model = "Qwen/Qwen2.5-3B-Instruct"  # Llama, Phi, Gemma, SmolLM, …
 tts_backend  = "huggingface"
 tts_hf_repo  = "facebook/mms-tts-eng"      # SpeechT5, Bark, VITS, Parler, …
 ```
+
+### When the local model won't load
+
+`llm_backend = "auto"` prefers whatever is local and answers through the
+[T1 API](https://pypi.org/project/hypernix/) only when the local model cannot
+serve — a GGUF whose architecture your llama.cpp predates, a first run with
+nothing downloaded, a machine with no GPU and no patience. The decision is
+made once at startup and logged.
+
+```toml
+llm_backend  = "auto"          # local first, T1 as the safety net
+t1_base_url  = "https://t1.example.org"
+t1_api_key   = "…"
+t1_model     = ""              # blank lets T1 route through your plan
+```
+
+```bash
+pip install 'nixorb[t1]'
+nixorb models --remote         # what your T1 server serves
+```
+
+Leave `t1_base_url` blank and nothing is ever contacted — `auto` is then
+just the local backend with a clearer error.
+
+### Naming models the short way
+
+With `nixorb[hypernix]` installed, `llm_model` accepts any name from
+hypernix's catalogue, so you needn't know the owner:
+
+```bash
+nixorb models qwen     # 23 matches, name and repo id side by side
+```
+
+```toml
+llm_model = "qwen3.5-4b"   # resolves to Qwen/Qwen3.5-4B
+```
+
+### Speech without an ML stack
+
+torch is the usual reason a machine cannot run the good models. Two engines
+avoid it entirely:
+
+```bash
+pip install 'nixorb[kokoro]'   # neural voice, 82M params, onnxruntime
+pip install 'nixorb[vosk]'     # offline ASR, 40 MB, fetches its own model
+```
+
+```toml
+tts_backend = "kokoro"
+tts_voice   = "af_heart"      # or am_michael, bf_emma, …
+
+asr_backend = "vosk"
+asr_model   = "en-us"         # a language, a model name, or a directory
+```
+
+Kokoro sounds like a person and runs on a CPU. Vosk is less accurate than
+Whisper and does not punctuate, but it is 40 MB and never fails to load —
+the floor NixOrb can always reach.
 
 ### Any Piper voice
 
@@ -129,6 +187,26 @@ ln -sf ~/.local/share/nixorb/venv/bin/nixorb ~/.local/bin/nixorb
 ```
 
 Python 3.12 – 3.14 are supported.
+
+### Configure it for your machine
+
+```bash
+nixorb setup            # looks at what you have, writes settings that run
+nixorb setup --dry-run  # show the plan, change nothing
+```
+
+The shipped defaults aim high — streaming Nemotron ASR, a reasoning GGUF, a
+neural voice. On a machine with that stack it is a good assistant; without
+it, every stage fails somewhere different and the orb starts, listens, and
+says nothing. `nixorb setup` looks first and prefers the boring option:
+faster-whisper over Nemotron, Ollama over an in-process GGUF, a voice that
+is already installed over one that must be fetched. It names every choice
+and what to install to do better.
+
+`install.sh` runs it for you, and a first start with no config at all makes
+the same choices by itself — so this is a command you only need when
+something changes, not to get going. A config you have edited is never
+overwritten.
 
 ### Start NixOrb
 
@@ -269,6 +347,8 @@ and whether the configured model is installed.
 | Orb never appears | `qt6-declarative` and `qt6-wayland` installed? The log prints any QML error. |
 | `nixorb: command not found` | `~/.local/bin` on your `PATH` (the installer links it there). |
 | Orb appears, nothing happens on activate | `nixorb status` — Ollama unreachable, or the model isn't pulled. |
+| It starts but never answers, and every stage logs a different failure | The defaults are aimed at a machine you may not have. Run `nixorb setup`: it reads what is installed and writes settings that will run here, with the reason for each one. `--dry-run` shows them without writing. |
+| I have no torch, no CUDA and no GPU | That is enough. `pip install 'nixorb[kokoro]' 'nixorb[vosk]'` gives a neural voice and offline speech recognition on onnxruntime and Kaldi — together about 130 MB, no torch anywhere. Then `nixorb setup`. |
 | It speaks no audio | `yay -S piper-tts` (AUR), or install `espeak-ng`; the log says which is missing. |
 | `nixorb trigger` says not running | Start the orb first; `nixorb status` shows the control socket. |
 | Commands are always denied | Approve the confirmation dialog, or set `require_action_confirmation = false`. |
@@ -285,8 +365,12 @@ and whether the configured model is installed.
 | Config changes do nothing | Fixed in 2.0.15. Before that, `config/default.toml` was never read at all, a mistyped key was silently ignored, and one badly-typed value reverted the whole file to defaults. `nixorb check` and the log now name the offending key. |
 | It reads its thinking aloud, run together, with no answer | Fixed in 2.0.15. `<think>` blocks are suppressed, streamed tokens keep their spaces, and `llm_max_tokens` defaults to 4096 so a reasoning model can finish thinking *and* answer. |
 | It won't run commands | `nixorb check` now says why: running as root refuses execution outright, and confirmation/sandbox state is listed. Commands the model only weighed up inside `<think>` are never run. |
+| It speaks through Piper although I chose something else | Fixed in 2.1.0. Piper used to be the hardcoded landing place for every failure. The order is `tts_fallbacks` now, the configured backend always leads, and every fall-through is logged with what to install. |
 | Piper only ever uses one voice | Fixed in 2.0.13 — before that it searched disk only, so any voice the installer had not fetched fell back to espeak. Set `tts_voice` to any name from `rhasspy/piper-voices`. |
 | It speaks with espeak although `tts_backend = "piper"` | The log line starting `TTS:` says why: no `piper-tts` binary, or the voice could not be fetched. A `tts_voice` written as prose (the stock default, meant for the HF backend) now falls back to `en_US-lessac-medium` rather than to espeak. |
+| It chose settings on its own the first time I started it | By design, once: with no config at all, NixOrb picks what this machine can run rather than failing on a model it cannot load. Every choice is in the log with its reason. Edit `~/.config/nixorb/config.toml` and it is never touched again. |
+| Kokoro: `could not fetch the Kokoro model` | It needs one ~90 MB ONNX file and a voice pack, fetched once into `~/.local/share/nixorb/kokoro`. Behind a proxy or offline, download them yourself and set `tts_kokoro_model` and `tts_kokoro_voices` to the paths. |
+| Vosk hears nothing | `asr_model` takes a language tag (`en-us`), a `vosk-model-…` name, or a path to an unpacked model directory. A bare tag downloads the small model on first use; the log line starting `ASR:` says which it resolved to. |
 | Custom wake word ignored | `wake_word_model` must be an openwakeword `.onnx`/`.tflite` path, or one of its bundled names. A Hugging Face repo of a transformers audio classifier is a different kind of model and openwakeword cannot load it — train one with openwakeword's tools instead. |
 | Out of VRAM with an HF LLM | `llm_hf_load_in_4bit = true` (`pip install 'nixorb[quant]'`), or `hf_device = "cpu"`. |
 | Actions do nothing when run as root | NixOrb disables command execution as root — run it as your normal user. |

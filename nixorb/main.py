@@ -780,6 +780,13 @@ def main() -> int:
 
     settings = Settings.load()
 
+    # A first launch on a machine without the full ML stack fails at
+    # whichever piece is missing, which looks exactly like NixOrb being
+    # broken. Pick what will run here before anything tries to load a model.
+    from nixorb.setup_wizard import configure_on_first_run
+
+    settings = configure_on_first_run(settings)
+
     # Create Qt application
     existing = QApplication.instance()
     app = existing if isinstance(existing, QApplication) else QApplication(sys.argv)
