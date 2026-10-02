@@ -9,5 +9,5 @@
 # Never install torch and torchaudio from different indexes. It resolves
 # fine and then fails at the dynamic linker the first time a model loads,
 # with a message naming a missing .so and nothing about torch.
-torch==2.7.1+cu118
-torchaudio==2.7.1+cu118
+torch==2.14.0
+torchaudio==2.11.0
