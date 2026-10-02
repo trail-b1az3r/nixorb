@@ -153,7 +153,7 @@ jobs:
           pip install -q hatchling build
           python -m build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: python-dist
           path: dist/
@@ -276,7 +276,7 @@ jobs:
           su builder -c "makepkg --noconfirm --cleanbuild --skipinteg -d"
           cp *.pkg.tar.zst /home/builder/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pacman-pkg
           path: /home/builder/nixorb-*.pkg.tar.zst
@@ -351,7 +351,7 @@ jobs:
           cd packaging/appimage
           bash build_appimage.sh "$NIXORB_VERSION"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: appimage
           path: packaging/appimage/NixOrb-*.AppImage
@@ -396,7 +396,7 @@ jobs:
           manifest-path: packaging/io.nixorb.NixOrb.yml
           cache-key:     flatpak-builder-${{ github.sha }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: flatpak
           path: NixOrb-*.flatpak
