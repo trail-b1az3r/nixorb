@@ -220,7 +220,7 @@ jobs:
 
       - name: Open PR for review
         if: inputs.mode == 'pull_request'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "docs: update changelog (LM Studio draft, ${{ inputs.model || 'local model' }})"
           title: "Changelog draft: ${{ inputs.version_label || 'Unreleased' }}"
